@@ -35,7 +35,7 @@ jobs:
 
       - name: Ensure git tags are available
         run: |
-          git fetch --force --tags origin
+          git fetch --tags origin
           git describe --tags --always
 
       - name: Install dependencies
@@ -55,6 +55,7 @@ jobs:
           QT5_PREFIX="$(brew --prefix qt@5)"
           GETTEXT_PREFIX="$(brew --prefix gettext)"
           LIBXML2_PREFIX="$(brew --prefix libxml2)"
+          REVISION="1.4.0rc2-${GITHUB_RUN_NUMBER}-g${GITHUB_SHA}"
 
           export PATH="$QT5_PREFIX/bin:$GETTEXT_PREFIX/bin:$PATH"
           export PKG_CONFIG_PATH="$QT5_PREFIX/lib/pkgconfig:$GETTEXT_PREFIX/lib/pkgconfig:$LIBXML2_PREFIX/lib/pkgconfig:$BREW_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
@@ -64,7 +65,10 @@ jobs:
           export GST_SCANNER_PATH="$BREW_PREFIX/opt/gstreamer/libexec/gstreamer-1.0/gst-plugin-scanner"
           export GST_PLUGIN_PATH="$BREW_PREFIX/lib/gstreamer-1.0"
 
+          echo "Using CMake revision $REVISION"
+
           cmake .. -Wno-dev -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DFORCE_GIT_REVISION="$REVISION" \
             -DGETTEXT_MSGMERGE_EXECUTABLE="$GETTEXT_PREFIX/bin/msgmerge" \
             -DGETTEXT_MSGFMT_EXECUTABLE="$GETTEXT_PREFIX/bin/msgfmt" \
             -DGETTEXT_XGETTEXT_EXECUTABLE="$GETTEXT_PREFIX/bin/xgettext" \
