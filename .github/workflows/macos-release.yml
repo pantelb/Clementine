@@ -127,11 +127,14 @@ jobs:
           echo "CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH"
           echo "Qt5_DIR=$Qt5_DIR"
           echo "Qt5LinguistTools_DIR=$Qt5LinguistTools_DIR"
-
+          REVISION="1.4.0rc2-${GITHUB_RUN_NUMBER}-g${GITHUB_SHA}"
+          echo "FORCE_GIT_REVISION=$REVISION"
+          
           cmake .. \
             -Wno-dev \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DFORCE_GIT_REVISION="$REVISION" \
             -DGETTEXT_MSGMERGE_EXECUTABLE="${GETTEXT_PREFIX}/bin/msgmerge" \
             -DGETTEXT_MSGFMT_EXECUTABLE="${GETTEXT_PREFIX}/bin/msgfmt" \
             -DGETTEXT_XGETTEXT_EXECUTABLE="${GETTEXT_PREFIX}/bin/xgettext" \
