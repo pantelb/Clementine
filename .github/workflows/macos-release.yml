@@ -79,6 +79,7 @@ jobs:
 
       - name: Add Homebrew compatibility paths
         run: |
+          set -euo pipefail
           BREW_PREFIX="$(brew --prefix)"
           QT5_PREFIX="$(brew --prefix qt@5)"
           GETTEXT_PREFIX="$(brew --prefix gettext)"
@@ -99,14 +100,30 @@ jobs:
 
       - name: Configure CMake
         working-directory: bin
-        env:
-          PKG_CONFIG_PATH: ${{ env.QT5_PREFIX }}/lib/pkgconfig:${{ env.GETTEXT_PREFIX }}/lib/pkgconfig:${{ env.LIBXML2_PREFIX }}/lib/pkgconfig:${{ env.BREW_PREFIX }}/lib/pkgconfig
-          CMAKE_PREFIX_PATH: ${{ env.QT5_PREFIX }};${{ env.GETTEXT_PREFIX }};${{ env.LIBXML2_PREFIX }};${{ env.BREW_PREFIX }}
-          Qt5_DIR: ${{ env.QT5_PREFIX }}/lib/cmake/Qt5
-          Qt5LinguistTools_DIR: ${{ env.QT5_PREFIX }}/lib/cmake/Qt5LinguistTools
-          GST_SCANNER_PATH: ${{ env.BREW_PREFIX }}/opt/gstreamer/libexec/gstreamer-1.0/gst-plugin-scanner
-          GST_PLUGIN_PATH: ${{ env.BREW_PREFIX }}/lib/gstreamer-1.0
         run: |
+          set -euo pipefail
+
+          BREW_PREFIX="${BREW_PREFIX:-$(brew --prefix)}"
+          QT5_PREFIX="${QT5_PREFIX:-$(brew --prefix qt@5)}"
+          GETTEXT_PREFIX="${GETTEXT_PREFIX:-$(brew --prefix gettext)}"
+          LIBXML2_PREFIX="${LIBXML2_PREFIX:-$(brew --prefix libxml2)}"
+
+          export PKG_CONFIG_PATH="${QT5_PREFIX}/lib/pkgconfig:${GETTEXT_PREFIX}/lib/pkgconfig:${LIBXML2_PREFIX}/lib/pkgconfig:${BREW_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export CMAKE_PREFIX_PATH="${QT5_PREFIX};${GETTEXT_PREFIX};${LIBXML2_PREFIX};${BREW_PREFIX}"
+          export Qt5_DIR="${QT5_PREFIX}/lib/cmake/Qt5"
+          export Qt5LinguistTools_DIR="${QT5_PREFIX}/lib/cmake/Qt5LinguistTools"
+          export GST_SCANNER_PATH="${BREW_PREFIX}/opt/gstreamer/libexec/gstreamer-1.0/gst-plugin-scanner"
+          export GST_PLUGIN_PATH="${BREW_PREFIX}/lib/gstreamer-1.0"
+
+          echo "BREW_PREFIX=$BREW_PREFIX"
+          echo "QT5_PREFIX=$QT5_PREFIX"
+          echo "GETTEXT_PREFIX=$GETTEXT_PREFIX"
+          echo "LIBXML2_PREFIX=$LIBXML2_PREFIX"
+          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+          echo "CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH"
+          echo "Qt5_DIR=$Qt5_DIR"
+          echo "Qt5LinguistTools_DIR=$Qt5LinguistTools_DIR"
+
           cmake .. \
             -Wno-dev \
             -DCMAKE_BUILD_TYPE=Release \
