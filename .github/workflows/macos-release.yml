@@ -1,0 +1,196 @@
+name: macOS Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/macos-release.yml'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'src/**'
+      - 'dist/**'
+      - 'data/**'
+      - 'ext/**'
+      - '3rdparty/**'
+      - 'gst/**'
+      - 'tests/**'
+      - 'Brewfile'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-macos:
+    name: Build macOS DMG
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      MAKEFLAGS: '-j2'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install build dependencies
+        run: |
+          brew install \
+            boost \
+            chromaprint \
+            cmake \
+            fftw \
+            gettext \
+            glib \
+            google-sparsehash \
+            gst-libav \
+            gst-plugins-bad \
+            gst-plugins-base \
+            gst-plugins-good \
+            gst-plugins-ugly \
+            gstreamer \
+            libmtp \
+            libplist \
+            libxml2 \
+            pkgconf \
+            protobuf \
+            qt@5 \
+            sqlite \
+            wget
+
+      - name: Add Homebrew compatibility paths
+        run: |
+          BREW_PREFIX="$(brew --prefix)"
+          QT5_PREFIX="$(brew --prefix qt@5)"
+          GETTEXT_PREFIX="$(brew --prefix gettext)"
+          LIBXML2_PREFIX="$(brew --prefix libxml2)"
+
+          echo "BREW_PREFIX=$BREW_PREFIX" >> "$GITHUB_ENV"
+          echo "QT5_PREFIX=$QT5_PREFIX" >> "$GITHUB_ENV"
+          echo "GETTEXT_PREFIX=$GETTEXT_PREFIX" >> "$GITHUB_ENV"
+          echo "LIBXML2_PREFIX=$LIBXML2_PREFIX" >> "$GITHUB_ENV"
+          echo "$QT5_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "$GETTEXT_PREFIX/bin" >> "$GITHUB_PATH"
+
+          # Clementine's old macdeploy.py still searches /usr/local/opt/qt5/plugins.
+          # Homebrew's current Qt 5 formula is named qt@5, so provide the old path.
+          if [[ "$BREW_PREFIX" == "/usr/local" && ! -e /usr/local/opt/qt5 ]]; then
+            ln -s "$QT5_PREFIX" /usr/local/opt/qt5
+          fi
+
+      - name: Configure CMake
+        working-directory: bin
+        env:
+          PKG_CONFIG_PATH: ${{ env.QT5_PREFIX }}/lib/pkgconfig:${{ env.GETTEXT_PREFIX }}/lib/pkgconfig:${{ env.LIBXML2_PREFIX }}/lib/pkgconfig:${{ env.BREW_PREFIX }}/lib/pkgconfig
+          CMAKE_PREFIX_PATH: ${{ env.QT5_PREFIX }};${{ env.GETTEXT_PREFIX }};${{ env.LIBXML2_PREFIX }};${{ env.BREW_PREFIX }}
+          Qt5_DIR: ${{ env.QT5_PREFIX }}/lib/cmake/Qt5
+          Qt5LinguistTools_DIR: ${{ env.QT5_PREFIX }}/lib/cmake/Qt5LinguistTools
+          GST_SCANNER_PATH: ${{ env.BREW_PREFIX }}/opt/gstreamer/libexec/gstreamer-1.0/gst-plugin-scanner
+          GST_PLUGIN_PATH: ${{ env.BREW_PREFIX }}/lib/gstreamer-1.0
+        run: |
+          cmake .. \
+            -Wno-dev \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DGETTEXT_MSGMERGE_EXECUTABLE="${GETTEXT_PREFIX}/bin/msgmerge" \
+            -DGETTEXT_MSGFMT_EXECUTABLE="${GETTEXT_PREFIX}/bin/msgfmt" \
+            -DGETTEXT_XGETTEXT_EXECUTABLE="${GETTEXT_PREFIX}/bin/xgettext" \
+            -DENABLE_AUDIOCD=OFF \
+            -DENABLE_BREAKPAD=OFF \
+            -DENABLE_BOX=OFF \
+            -DENABLE_DROPBOX=OFF \
+            -DENABLE_GOOGLE_DRIVE=OFF \
+            -DENABLE_LIBGPOD=OFF \
+            -DENABLE_LIBLASTFM=OFF \
+            -DENABLE_LIBMTP=OFF \
+            -DENABLE_MOODBAR=OFF \
+            -DENABLE_SEAFILE=OFF \
+            -DENABLE_SKYDRIVE=OFF \
+            -DENABLE_SPARKLE=OFF \
+            -DENABLE_SPOTIFY_BLOB=OFF \
+            -DENABLE_VISUALISATIONS=OFF \
+            -DENABLE_WIIMOTEDEV=OFF
+
+      - name: Build Clementine
+        working-directory: bin
+        run: cmake --build . --parallel 2
+
+      - name: Copy app resources
+        working-directory: bin
+        run: cmake --build . --target install --parallel 2
+
+      - name: Ad-hoc sign app bundle
+        working-directory: bin
+        run: |
+          codesign --force --deep --sign - clementine.app || true
+
+      - name: Build DMG
+        working-directory: bin
+        run: cmake --build . --target dmg --parallel 2
+
+      - name: Normalize artifact name
+        id: package
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA::7}"
+          DESCRIBE="$(git describe --tags --always --dirty 2>/dev/null || echo "$SHORT_SHA")"
+          SAFE_DESCRIBE="$(echo "$DESCRIBE" | tr '/ ' '--')"
+          RELEASE_TAG="macos-${SAFE_DESCRIBE}-${GITHUB_RUN_NUMBER}"
+          RELEASE_NAME="Clementine macOS ${DESCRIBE}"
+          DMG="$(find bin -maxdepth 1 -name 'clementine-*.dmg' -print -quit)"
+
+          if [[ -z "$DMG" ]]; then
+            echo "No DMG was produced" >&2
+            exit 1
+          fi
+
+          OUT="Clementine-macOS-x86_64-${SAFE_DESCRIBE}-${SHORT_SHA}.dmg"
+          mkdir -p release
+          cp "$DMG" "release/$OUT"
+
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_name=$RELEASE_NAME" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clementine-macos-dmg
+          path: release/*.dmg
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package.outputs.release_tag }}
+          name: ${{ steps.package.outputs.release_name }}
+          body: |
+            Automated macOS x86_64 build from `${{ github.sha }}`.
+
+            Notes:
+            - This build is ad-hoc signed, not Apple Developer ID notarized.
+            - macOS Gatekeeper may require right-click → Open on first launch.
+            - Some optional Clementine components are disabled to make the CI build reproducible with current Homebrew packages.
+          files: release/*.dmg
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: true
