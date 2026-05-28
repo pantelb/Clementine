@@ -1,0 +1,81 @@
+name: macOS Configure Debug
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/macos-configure-debug.yml'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  configure:
+    name: Configure macOS build
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          brew install boost chromaprint cmake fftw gettext glib google-sparsehash \
+            gst-libav gst-plugins-bad gst-plugins-base gst-plugins-good \
+            gst-plugins-ugly gstreamer libmtp libplist libxml2 pkgconf \
+            protobuf qt@5 sqlite wget
+
+      - name: Configure and capture log
+        id: configure
+        working-directory: bin
+        run: |
+          set -uo pipefail
+          LOG="$GITHUB_WORKSPACE/cmake-configure.log"
+          BREW_PREFIX="$(brew --prefix)"
+          QT5_PREFIX="$(brew --prefix qt@5)"
+          GETTEXT_PREFIX="$(brew --prefix gettext)"
+          LIBXML2_PREFIX="$(brew --prefix libxml2)"
+
+          export PATH="$QT5_PREFIX/bin:$GETTEXT_PREFIX/bin:$PATH"
+          export PKG_CONFIG_PATH="$QT5_PREFIX/lib/pkgconfig:$GETTEXT_PREFIX/lib/pkgconfig:$LIBXML2_PREFIX/lib/pkgconfig:$BREW_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export CMAKE_PREFIX_PATH="$QT5_PREFIX;$GETTEXT_PREFIX;$LIBXML2_PREFIX;$BREW_PREFIX"
+          export Qt5_DIR="$QT5_PREFIX/lib/cmake/Qt5"
+          export Qt5LinguistTools_DIR="$QT5_PREFIX/lib/cmake/Qt5LinguistTools"
+          export GST_SCANNER_PATH="$BREW_PREFIX/opt/gstreamer/libexec/gstreamer-1.0/gst-plugin-scanner"
+          export GST_PLUGIN_PATH="$BREW_PREFIX/lib/gstreamer-1.0"
+
+          cmake .. -Wno-dev -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DGETTEXT_MSGMERGE_EXECUTABLE="$GETTEXT_PREFIX/bin/msgmerge" \
+            -DGETTEXT_MSGFMT_EXECUTABLE="$GETTEXT_PREFIX/bin/msgfmt" \
+            -DGETTEXT_XGETTEXT_EXECUTABLE="$GETTEXT_PREFIX/bin/xgettext" \
+            -DENABLE_AUDIOCD=OFF -DENABLE_BREAKPAD=OFF -DENABLE_BOX=OFF \
+            -DENABLE_DROPBOX=OFF -DENABLE_GOOGLE_DRIVE=OFF -DENABLE_LIBGPOD=OFF \
+            -DENABLE_LIBLASTFM=OFF -DENABLE_LIBMTP=OFF -DENABLE_MOODBAR=OFF \
+            -DENABLE_SEAFILE=OFF -DENABLE_SKYDRIVE=OFF -DENABLE_SPARKLE=OFF \
+            -DENABLE_SPOTIFY_BLOB=OFF -DENABLE_VISUALISATIONS=OFF \
+            -DENABLE_WIIMOTEDEV=OFF > "$LOG" 2>&1
+          STATUS=$?
+          tail -n 200 "$LOG" || true
+          exit "$STATUS"
+
+      - name: Upload configure log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmake-configure-log
+          path: cmake-configure.log
+          if-no-files-found: error
