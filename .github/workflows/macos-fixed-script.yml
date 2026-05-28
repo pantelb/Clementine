@@ -1,0 +1,39 @@
+name: macOS Fixed Script
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 180
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      MAKEFLAGS: '-j2'
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build, package, and release
+        run: bash .github/scripts/macos_build_fixed.sh
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clementine-macos-dmg
+          path: release/*.dmg
+          if-no-files-found: error
