@@ -49,5 +49,11 @@ cmake --build bin --target dmg --parallel 2
 SHORT_SHA="${GITHUB_SHA::7}"
 DESCRIBE="$(git describe --tags --always --dirty 2>/dev/null || echo "$SHORT_SHA")"
 SAFE_DESCRIBE="$(echo "$DESCRIBE" | tr '/ ' '--')"
+TAG_NAME="macos-fixed-${SAFE_DESCRIBE}-${GITHUB_RUN_NUMBER}"
 mkdir -p release
-cp "$(find bin -maxdepth 1 -name 'clementine-*.dmg' -print -quit)" "release/Clementine-macOS-x86_64-${SAFE_DESCRIBE}-${SHORT_SHA}.dmg"
+OUT="release/Clementine-macOS-x86_64-${SAFE_DESCRIBE}-${SHORT_SHA}.dmg"
+cp "$(find bin -maxdepth 1 -name 'clementine-*.dmg' -print -quit)" "$OUT"
+
+if command -v gh >/dev/null 2>&1; then
+  gh release create "$TAG_NAME" "$OUT" --title "Clementine macOS fixed ${DESCRIBE}" --notes "Automated macOS x86_64 build. This build is ad-hoc signed and not notarized." --prerelease
+fi
