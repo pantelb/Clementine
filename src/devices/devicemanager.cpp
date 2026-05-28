@@ -38,6 +38,7 @@
 #include "core/utilities.h"
 #include "devicedatabasebackend.h"
 #include "deviceinfo.h"
+#include "devicelister.h"
 #include "devicestatefiltermodel.h"
 #include "filesystemdevice.h"
 #include "ui/iconloader.h"
